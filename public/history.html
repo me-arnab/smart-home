@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>🏠Arnab Smart Home— History</title>
+    <style>
+        body {
+            font-family: Inter, system-ui, Arial;
+            background: #0d1117;
+            color: #e6f7ff;
+            margin: 0;
+            padding: 20px
+        }
+
+        header {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            justify-content: space-between
+        }
+
+        a.logo {
+            color: #00c3ff;
+            text-decoration: none;
+            font-weight: 700
+        }
+
+        h1 {
+            margin: 6px 0 14px
+        }
+
+        .wrap {
+            max-width: 1000px;
+            margin: 18px auto
+        }
+
+        .card {
+            background: #101418;
+            border-radius: 12px;
+            padding: 14px;
+            margin-bottom: 12px;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6)
+        }
+
+        .section-title {
+            font-size: 14px;
+            color: #9fbfca;
+            margin-bottom: 8px
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px
+        }
+
+        th,
+        td {
+            padding: 8px 10px;
+            text-align: left;
+            border-bottom: 1px solid #111
+        }
+
+        th {
+            color: #9fbfca;
+            font-weight: 600
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 6px 10px;
+            border-radius: 8px;
+            font-weight: 600
+        }
+
+        .on {
+            background: #052;
+            color: #7fffcb
+        }
+
+        .off {
+            background: #320;
+            color: #ffd0c4
+        }
+
+        .small {
+            font-size: 12px;
+            color: #9fbfca
+        }
+
+        .controls {
+            display: flex;
+            gap: 8px;
+            align-items: center
+        }
+
+        input#filter {
+            background: #0b1114;
+            border: 1px solid #123;
+            padding: 8px;
+            border-radius: 8px;
+            color: #fff
+        }
+
+        .empty {
+            color: #97a6b1;
+            padding: 12px
+        }
+    </style>
+</head>
+
+<body>
+    <div class="wrap">
+        <header>
+            <a class="logo" href="/">🏠 Arnab Smart Home</a>
+            <div class="controls">
+                <span class="small">Filter device:</span>
+                <select id="deviceFilter">
+                    <option value="all">All</option>
+                    <option value="light1">Light 1</option>
+                    <option value="light2">Light 2</option>
+                    <option value="fan">Fan</option>
+                    <option value="plug">Plug</option>
+                </select>
+                <button id="refresh">Refresh</button>
+            </div>
+        </header>
+
+        <h1>History & Active Actions</h1>
+
+        <div class="card">
+            <div class="section-title">Currently ON (not turned off)</div>
+            <div id="activeList" class="small empty">Loading...</div>
+        </div>
+
+        <div class="card">
+            <div class="section-title">Full Activity Log</div>
+            <div id="logWrap">
+                <table id="logTable">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>User</th>
+                            <th>Device</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const apiHistory = '/history'; // server endpoint
+        const logTableBody = document.querySelector('#logTable tbody');
+        const activeList = document.getElementById('activeList');
+        const deviceFilter = document.getElementById('deviceFilter');
+        const refreshBtn = document.getElementById('refresh');
+
+        async function fetchHistory() {
+            try {
+                const r = await fetch(apiHistory, { cache: 'no-store' });
+                if (!r.ok) throw new Error('Failed to load history');
+                const arr = await r.json();
+                return arr;
+            } catch (err) {
+                console.error(err);
+                return null;
+            }
+        }
+
+        function renderLog(logs) {
+            logTableBody.innerHTML = '';
+            if (!logs || logs.length === 0) {
+                logTableBody.innerHTML = '<tr><td colspan="4" class="empty">No activity yet</td></tr>';
+                return;
+            }
+
+            const filter = deviceFilter.value;
+
+            for (let i = logs.length - 1; i >= 0; i--) { // show newest first
+                const e = logs[i];
+                if (filter !== 'all' && e.device !== filter) continue;
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+        <td>${e.time || e.timestamp || ''}</td>
+        <td>${escapeHtml(e.user || 'Unknown')}</td>
+        <td>${escapeHtml(e.device)}</td>
+        <td><span class="badge ${e.state ? 'on' : 'off'}">${e.state ? 'ON' : 'OFF'}</span></td>
+      `;
+                logTableBody.appendChild(tr);
+            }
+        }
+
+        // Determine "still ON" devices by checking last action for each device
+        function computeActive(logs) {
+            const last = {}; // device -> last entry
+            for (let i = 0; i < logs.length; i++) {
+                const e = logs[i];
+                last[e.device] = e;
+            }
+            const active = [];
+            for (const device in last) {
+                if (last[device].state) {
+                    active.push(last[device]);
+                }
+            }
+            return active;
+        }
+
+        function renderActive(active) {
+            if (!active || active.length === 0) {
+                activeList.classList.add('empty');
+                activeList.innerText = 'No device is currently ON';
+                return;
+            }
+            activeList.classList.remove('empty');
+            activeList.innerHTML = '';
+            active.forEach(a => {
+                const div = document.createElement('div');
+                div.innerHTML = `<strong>${escapeHtml(a.device)}</strong> — turned ON by <em>${escapeHtml(a.user || 'Unknown')}</em> at <span class="small">${a.time || a.timestamp}</span>`;
+                activeList.appendChild(div);
+            });
+        }
+
+        function escapeHtml(s) {
+            return String(s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        async function refresh() {
+            activeList.innerText = 'Loading...';
+            const logs = await fetchHistory();
+            if (logs === null) {
+                activeList.innerText = 'Failed to load history';
+                logTableBody.innerHTML = '<tr><td colspan="4" class="empty">Failed to load</td></tr>';
+                return;
+            }
+            renderLog(logs);
+            const active = computeActive(logs);
+            renderActive(active);
+        }
+
+        // initial load
+        refresh();
+
+        refreshBtn.addEventListener('click', refresh);
+        deviceFilter.addEventListener('change', refresh);
+    </script>
+</body>
+
+</html>
