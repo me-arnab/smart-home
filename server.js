@@ -1,6 +1,8 @@
-import express from "express";
+import express from "express"; 
 import { WebSocketServer } from "ws";
 import cors from "cors";
+import path from "path";
+import { fileURLToPath } from "url";
 
 const app = express();
 app.use(cors());
@@ -47,13 +49,22 @@ wss.on("connection", (ws, req) => {
   }
 });
 
+// 🟩 ADD THIS BLOCK
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "index.html"));
+});
+
 // Upgrade HTTP → WebSocket
 const server = app.listen(PORT, () =>
   console.log(`🚀 Server running on port ${PORT}`)
 );
+
 server.on("upgrade", (req, socket, head) => {
-    console.log("🔗 Upgrading HTTP to WebSocket");
-    wss.handleUpgrade(req, socket, head, (ws) => {
+  console.log("🔗 Upgrading HTTP to WebSocket");
+  wss.handleUpgrade(req, socket, head, (ws) => {
     wss.emit("connection", ws, req);
   });
 });
