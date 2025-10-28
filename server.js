@@ -6,11 +6,10 @@ import fs from "fs";
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use(express.static("public")); // serve index.html from public/
 
 const PORT = process.env.PORT || 8080;
 
-// Store current states (in-memory)
+// ✅ Device states stored in memory
 let deviceStates = {
   light1: false,
   light2: false,
@@ -18,30 +17,19 @@ let deviceStates = {
   plug: false,
 };
 
-// Store logs in a file
-const LOG_FILE = "actionHistory.json";
-if (!fs.existsSync(LOG_FILE)) fs.writeFileSync(LOG_FILE, JSON.stringify([]));
-
-function logAction(device, state, user) {
-  const time = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
-  const log = {
-    device,
-    state,
-    user: user || "Unknown",
-    time,
-  };
-  const history = JSON.parse(fs.readFileSync(LOG_FILE));
-  history.push(log);
-  fs.writeFileSync(LOG_FILE, JSON.stringify(history, null, 2));
-  console.log(`[${time}] ${device} turned ${state ? "ON" : "OFF"} by ${user}`);
+// ✅ Log history (persistent in Render file system for session)
+const logFile = "./history.json";
+let history = [];
+if (fs.existsSync(logFile)) {
+  history = JSON.parse(fs.readFileSync(logFile, "utf8"));
 }
 
-// WebSocket setup
 let espSocket = null;
 let webClients = [];
 
 const wss = new WebSocketServer({ noServer: true });
 
+// ------------------ WebSocket Logic ------------------
 wss.on("connection", (ws, req) => {
   const url = req.url;
 
@@ -49,14 +37,19 @@ wss.on("connection", (ws, req) => {
     console.log("✅ ESP8266 connected");
     espSocket = ws;
 
+    ws.send(JSON.stringify({ type: "init", states: deviceStates }));
+
     ws.on("message", (message) => {
       console.log("📡 From ESP:", message.toString());
-      const msg = JSON.parse(message);
-      if (msg.device && typeof msg.state === "boolean") {
-        deviceStates[msg.device] = msg.state;
-        webClients.forEach((client) =>
-          client.send(JSON.stringify({ type: "update", device: msg.device, state: msg.state }))
-        );
+      try {
+        const msg = JSON.parse(message.toString());
+        if (msg.type === "update") {
+          deviceStates[msg.device] = msg.state;
+          broadcastWeb(JSON.stringify(msg));
+          saveLog(msg.user || "ESP", msg.device, msg.state);
+        }
+      } catch (e) {
+        console.log("Invalid ESP message:", e);
       }
     });
 
@@ -64,32 +57,30 @@ wss.on("connection", (ws, req) => {
       console.log("❌ ESP disconnected");
       espSocket = null;
     });
-
   } else {
     console.log("🌐 Web client connected");
     webClients.push(ws);
 
-    // Send initial states
-    ws.send(JSON.stringify({ type: "init", data: deviceStates }));
+    // Send all device states when user connects
+    ws.send(JSON.stringify({ type: "init", states: deviceStates }));
 
     ws.on("message", (message) => {
-      console.log("💻 From Web:", message.toString());
-      const msg = JSON.parse(message);
+      try {
+        const msg = JSON.parse(message.toString());
+        if (msg.type === "toggle") {
+          deviceStates[msg.device] = msg.state;
 
-      if (msg.type === "toggle" && msg.device) {
-        deviceStates[msg.device] = msg.state;
+          // Send update to ESP
+          if (espSocket) espSocket.send(JSON.stringify(msg));
 
-        // Log who toggled
-        logAction(msg.device, msg.state, msg.user || "Unknown");
+          // Update all web clients
+          broadcastWeb(JSON.stringify(msg));
 
-        // Send update to ESP
-        if (espSocket) espSocket.send(JSON.stringify(msg));
-
-        // Broadcast to all clients
-        webClients.forEach((client) => {
-          if (client.readyState === 1)
-            client.send(JSON.stringify({ type: "update", device: msg.device, state: msg.state }));
-        });
+          // Log the change
+          saveLog(msg.user || "Web User", msg.device, msg.state);
+        }
+      } catch (e) {
+        console.log("Invalid message from web:", e);
       }
     });
 
@@ -99,12 +90,43 @@ wss.on("connection", (ws, req) => {
   }
 });
 
-// Upgrade HTTP → WebSocket
-const server = app.listen(PORT, () =>
-  console.log(`🚀 Server running on port ${PORT}`)
-);
+function broadcastWeb(message) {
+  webClients.forEach((client) => {
+    if (client.readyState === 1) client.send(message);
+  });
+}
+
+function saveLog(user, device, state) {
+  const entry = {
+    user,
+    device,
+    state,
+    time: new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
+  };
+  history.push(entry);
+  fs.writeFileSync(logFile, JSON.stringify(history, null, 2));
+  console.log("📝 Log:", entry);
+}
+
+// ✅ Serve frontend files
+app.use(express.static("public"));
+
+// ✅ API route for history
+app.get("/history", (req, res) => {
+  res.json(history);
+});
+
+// ✅ NEW: ESP Connection Status API
+app.get("/status", (req, res) => {
+  res.json({ connected: espSocket !== null });
+});
+
+// ✅ Create HTTP server and upgrade to WebSocket
+const server = app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
+
 server.on("upgrade", (req, socket, head) => {
-  console.log("🔗 Upgrading HTTP to WebSocket");
   wss.handleUpgrade(req, socket, head, (ws) => {
     wss.emit("connection", ws, req);
   });
