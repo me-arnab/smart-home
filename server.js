@@ -52,7 +52,8 @@ const server = app.listen(PORT, () =>
   console.log(`🚀 Server running on port ${PORT}`)
 );
 server.on("upgrade", (req, socket, head) => {
-  wss.handleUpgrade(req, socket, head, (ws) => {
+    console.log("🔗 Upgrading HTTP to WebSocket");
+    wss.handleUpgrade(req, socket, head, (ws) => {
     wss.emit("connection", ws, req);
   });
 });
