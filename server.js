@@ -17,6 +17,13 @@ let deviceStates = {
   plug: false,
 };
 
+// ✅ Load saved device states if available
+const stateFile = "./deviceStates.json";
+if (fs.existsSync(stateFile)) {
+  deviceStates = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+  console.log("♻️ Loaded previous device states:", deviceStates);
+}
+
 // ✅ Log history (persistent in Render file system for session)
 const logFile = "./history.json";
 let history = [];
@@ -45,6 +52,7 @@ wss.on("connection", (ws, req) => {
         const msg = JSON.parse(message.toString());
         if (msg.type === "update") {
           deviceStates[msg.device] = msg.state;
+          fs.writeFileSync(stateFile, JSON.stringify(deviceStates, null, 2)); // ✅ Save new state
           broadcastWeb(JSON.stringify(msg));
           saveLog(msg.user || "ESP", msg.device, msg.state);
         }
@@ -69,6 +77,7 @@ wss.on("connection", (ws, req) => {
         const msg = JSON.parse(message.toString());
         if (msg.type === "toggle") {
           deviceStates[msg.device] = msg.state;
+          fs.writeFileSync(stateFile, JSON.stringify(deviceStates, null, 2)); // ✅ Save to file
 
           // Send update to ESP
           if (espSocket) espSocket.send(JSON.stringify(msg));
@@ -116,7 +125,7 @@ app.get("/history", (req, res) => {
   res.json(history);
 });
 
-// ✅ NEW: ESP Connection Status API
+// ✅ ESP Connection Status API
 app.get("/status", (req, res) => {
   res.json({ connected: espSocket !== null });
 });

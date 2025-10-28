@@ -154,17 +154,35 @@
                 document.getElementById(msg.device).checked = msg.state;
             }
 
-            // Update ESP connection status
+            // Update ESP connection status if message type is esp_status
             if (msg.type === "esp_status") {
-                if (msg.connected) {
-                    espDot.classList.add("connected");
-                    espText.textContent = "ESP Connected 🟢";
-                } else {
-                    espDot.classList.remove("connected");
-                    espText.textContent = "ESP Disconnected 🔴";
-                }
+                updateESPStatus(msg.connected);
             }
         };
+
+        // 🔁 Poll ESP connection status every 2 seconds
+        async function checkESPStatus() {
+            try {
+                const res = await fetch("/status");
+                const data = await res.json();
+                updateESPStatus(data.connected);
+            } catch {
+                updateESPStatus(false);
+            }
+        }
+
+        function updateESPStatus(isConnected) {
+            if (isConnected) {
+                espDot.classList.add("connected");
+                espText.textContent = "ESP Connected 🟢";
+            } else {
+                espDot.classList.remove("connected");
+                espText.textContent = "ESP Disconnected 🔴";
+            }
+        }
+
+        setInterval(checkESPStatus, 2000);
+        checkESPStatus(); // Initial check
     </script>
 </body>
 
