@@ -80,43 +80,47 @@
     <div id="devices"></div>
 
     <script>
-        const socket = new WebSocket("wss://arnab-smart.onrender.com"); // Replace with your Render URL later
+            const socket = new WebSocket("wss://arnab-smart.onrender.com"); // use wss for Render
 
-        const deviceNames = {
-            light1: "Light 1",
+            const deviceNames = {
+                light1: "Light 1",
             light2: "Light 2",
             fan: "Fan",
             plug: "Light 3"
-        };
+  };
 
-        const devicesDiv = document.getElementById("devices");
+            const devicesDiv = document.getElementById("devices");
 
-        function createDevice(device, state) {
-            const div = document.createElement("div");
+            function createDevice(device, state) {
+    const div = document.createElement("div");
             div.className = "device";
             div.innerHTML = `
-        <h3>${deviceNames[device]}</h3>
-        <label class="switch">
-          <input type="checkbox" ${state ? "checked" : ""} id="${device}">
-          <span class="slider"></span>
-        </label>`;
-            devicesDiv.appendChild(div);
+            <h3>${deviceNames[device]}</h3>
+            <label class="switch">
+                <input type="checkbox" ${state ? "checked" : ""} id="${device}">
+                    <span class="slider"></span>
+            </label>`;
+    devicesDiv.appendChild(div);
 
-            const checkbox = div.querySelector("input");
-            checkbox.addEventListener("change", () => {
-                socket.send(JSON.stringify({ type: "toggle", device, state: checkbox.checked }));
-            });
-        }
+    const checkbox = div.querySelector("input");
+    checkbox.addEventListener("change", () => {
+      socket.send(JSON.stringify({ type: "toggle", device, state: checkbox.checked }));
+    });
+  }
 
-        socket.onmessage = (event) => {
-            const msg = JSON.parse(event.data);
-            if (msg.type === "init") {
-                devicesDiv.innerHTML = "";
-                Object.keys(msg.data).forEach((d) => createDevice(d, msg.data[d]));
-            } else if (msg.type === "update") {
-                document.getElementById(msg.device).checked = msg.state;
-            }
-        };
+  // Show default devices instantly
+  Object.keys(deviceNames).forEach((d) => createDevice(d, false));
+
+  socket.onopen = () => console.log("Connected to WebSocket ✅");
+
+  socket.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    if (msg.type === "update") {
+      document.getElementById(msg.device).checked = msg.state;
+    }
+  };
+    </script>
+
     </script>
 </body>
 
